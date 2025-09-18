@@ -66,6 +66,11 @@
             measurementId: "G-4Q9Y9G7LJD"
         };
 
+        // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        // ★ ここにホスト（管理者）のユーザーIDを貼り付けてください ★
+        const HOST_UID = "TtsV0qJ4bSNbANkKxSDcSRlKB6q2";
+        // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+
         let db, auth, app;
         let userId;
 
@@ -79,7 +84,7 @@
 
             try {
                 app = initializeApp(firebaseConfig);
-                getAnalytics(app); // Initialize analytics if available
+                getAnalytics(app);
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
@@ -98,7 +103,15 @@
 
         let scoresCollectionRef;
         const setupListeners = () => {
-            // isMultiplayerがtrueの場合、共有フォルダのパスを直接使用
+            // --- ホストかどうかを判定し、クリアボタンの表示を制御 ---
+            const clearButton = document.getElementById('clearScoresButton');
+            if (userId === HOST_UID) {
+                clearButton.style.display = 'block'; // ホストなら表示
+            } else {
+                clearButton.style.display = 'none';  // ホストでなければ非表示
+            }
+            // --- -------------------------------------------- ---
+
             const isMultiplayer = true; 
             const path = isMultiplayer
                 ? `/artifacts/${firebaseConfig.projectId}/public/data/scores`
@@ -108,7 +121,6 @@
             
             const q = query(scoresCollectionRef);
 
-            // Fetch initial data and then listen for real-time updates
             onSnapshot(q, (querySnapshot) => {
                 let allScores = [];
                 querySnapshot.forEach((doc) => {
@@ -116,13 +128,10 @@
                     allScores.push({ id: doc.id, ...data });
                 });
 
-                // Sort the scores in memory
                 allScores.sort((a, b) => {
-                    // Sort by score (descending)
                     if (b.score !== a.score) {
                         return b.score - a.score;
                     }
-                    // Sort by timestamp (ascending) for ties
                     return a.timestamp?.toMillis() - b.timestamp?.toMillis();
                 });
 
@@ -136,7 +145,6 @@
             const name = nameInput.value.trim();
             const score = parseInt(scoreInput.value, 10);
 
-            // Validate that the score is a number between 0 and 24
             if (name === "" || isNaN(score) || score < 0 || score > 24) {
                 showModal('名前と0から24までの点数を入力してください。');
                 return;
@@ -161,7 +169,7 @@
              try {
                 const q = query(scoresCollectionRef);
                 const querySnapshot = await getDocs(q);
-                const batch = writeBatch(db); // use writeBatch
+                const batch = writeBatch(db);
                 querySnapshot.forEach((doc) => {
                     batch.delete(doc.ref);
                 });
@@ -175,40 +183,41 @@
 
         const updateRankingList = (scores) => {
             const rankingList = document.getElementById('rankingList');
-            rankingList.innerHTML = ''; // Clear existing list
+            rankingList.innerHTML = '';
 
-            // --- 同率順位のロジックを実装 ---
             let lastScore = null;
             let currentRank = 1;
 
             scores.forEach((item, index) => {
-                // 前の点数と異なる場合、順位を更新する
                 if (lastScore !== null && item.score < lastScore) {
                     currentRank = index + 1;
+                } else if (lastScore === null) {
+                    currentRank = 1;
                 }
                 lastScore = item.score;
-            // --- ------------------------ ---
 
-                let rankClass = '';
-                let rankText = currentRank;
+                let rankClass = 'card';
+                let rankContent = `<div class="flex-shrink-0 w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center font-bold text-lg">${currentRank}</div>`;
 
                 if (currentRank === 1) {
                     rankClass = 'gold text-black';
-                    rankText = '🥇';
+                    rankContent = '🥇';
                 } else if (currentRank === 2) {
                     rankClass = 'silver text-black';
-                    rankText = '🥈';
+                    rankContent = '🥈';
                 } else if (currentRank === 3) {
                     rankClass = 'bronze text-black';
-                    rankText = '🥉';
+                    rankContent = '🥉';
                 }
 
                 const listItem = document.createElement('li');
-                listItem.className = `ranking-item p-4 mb-2 rounded-lg flex items-center shadow-lg ${rankClass}`;
+                listItem.className = `ranking-item p-4 mb-2 rounded-lg flex items-center justify-between shadow-lg ${rankClass}`;
                 listItem.innerHTML = `
-                    <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold text-lg">${rankText}</div>
-                    <div class="ml-4 flex-grow">
-                        <span class="text-lg font-semibold">${item.name}</span>
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0 w-10 text-center font-bold text-xl">${rankContent}</div>
+                        <div class="ml-4">
+                            <span class="text-lg font-semibold">${item.name}</span>
+                        </div>
                     </div>
                     <span class="text-2xl font-extrabold">${item.score}</span>
                 `;
@@ -216,7 +225,6 @@
             });
         };
 
-        // Modal functions
         window.showModal = (message) => {
             const modal = document.getElementById('myModal');
             const modalMessage = document.getElementById('modalMessage');
@@ -224,14 +232,13 @@
             modal.classList.remove('hidden');
             setTimeout(() => {
                 modal.classList.add('hidden');
-            }, 3000); // Hide after 3 seconds
+            }, 3000);
         };
 
         window.closeModal = () => {
             document.getElementById('myModal').classList.add('hidden');
         };
 
-        // Initialize on window load
         window.onload = window.firebaseInit;
     </script>
 
@@ -265,7 +272,8 @@
         <div class="card rounded-xl p-6 shadow-2xl">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-2xl font-bold text-gray-200">現在のランキング</h2>
-                <button onclick="clearScores()" class="text-sm text-gray-400 hover:text-red-500 transition duration-200">
+                <!-- このボタンはホストにのみ表示されます -->
+                <button id="clearScoresButton" onclick="clearScores()" class="text-sm text-gray-400 hover:text-red-500 transition duration-200" style="display: none;">
                     ランキングをクリア
                 </button>
             </div>
@@ -283,3 +291,5 @@
     </div>
 </body>
 </html>
+
+
