@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>射的ランキング</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #121212;
+            color: #E0E0E0;
+        }
+        .container {
+            max-width: 900px;
+        }
+        .gradient-text {
+            background-image: linear-gradient(to right, #6EE7B7, #3B82F6, #9333EA);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .card {
+            background-color: #1E1E1E;
+            border: 1px solid #333;
+        }
+        .input-card {
+            background-color: #2D2D2D;
+            border-color: #444;
+        }
+        .ranking-item {
+            transition: all 0.3s ease-in-out;
+            transform-origin: center;
+        }
+        .gold {
+            background-image: linear-gradient(135deg, #FFD700, #FFB900);
+            color: #222;
+        }
+        .silver {
+            background-image: linear-gradient(135deg, #C0C0C0, #A9A9A9);
+            color: #222;
+        }
+        .bronze {
+            background-image: linear-gradient(135deg, #CD7F32, #B87333);
+            color: #222;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8 flex flex-col items-center min-h-screen">
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+
+        // Your Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAdxqGT1SgRFFrpbHhMeDCAK1lVSePdZp4",
+            authDomain: "my-shooting-game-f932d.firebaseapp.com",
+            projectId: "my-shooting-game-f932d",
+            storageBucket: "my-shooting-game-f932d.firebasestorage.app",
+            messagingSenderId: "253512417153",
+            appId: "1:253512417153:web:7c8d4ad21a26f982a5f280",
+            measurementId: "G-4Q9Y9G7LJD"
+        };
+
+        let db, auth, app;
+        let userId;
+
+        window.firebaseInit = async () => {
+            console.log("Initializing Firebase with config:", firebaseConfig);
+            if (!Object.keys(firebaseConfig).length) {
+                console.error('Firebase config is not provided.');
+                document.getElementById('loading-message').textContent = 'Firebase設定が読み込めませんでした。';
+                return;
+            }
+
+            try {
+                app = initializeApp(firebaseConfig);
+                getAnalytics(app); // Initialize analytics if available
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                await signInAnonymously(auth);
+                userId = auth.currentUser.uid;
+                document.getElementById('userIdDisplay').textContent = userId;
+                console.log("Firebase initialized and user signed in:", userId);
+                document.getElementById('loading-message').classList.add('hidden');
+                document.getElementById('main-content').classList.remove('hidden');
+                setupListeners();
+            } catch (error) {
+                console.error("Firebase authentication failed:", error);
+                document.getElementById('loading-message').textContent = '認証エラーが発生しました。';
+            }
+        };
+
+        let scoresCollectionRef;
+        const setupListeners = () => {
+            const privatePath = `/artifacts/my-shooting-game-f932d/users/${userId}/scores`;
+            scoresCollectionRef = collection(db, privatePath);
+            
+            // Check if public data is needed
+            const isMultiplayer = true; // This is now a multiplayer app
+            if (isMultiplayer) {
+                const publicPath = `/artifacts/my-shooting-game-f932d/public/data/scores`;
+                scoresCollectionRef = collection(db, publicPath);
+            }
+
+            const q = query(scoresCollectionRef);
+
+            // Fetch initial data and then listen for real-time updates
+            onSnapshot(q, (querySnapshot) => {
+                let allScores = [];
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    allScores.push({ id: doc.id, ...data });
+                });
+
+                // Sort the scores in memory
+                allScores.sort((a, b) => {
+                    // Sort by score (descending)
+                    if (b.score !== a.score) {
+                        return b.score - a.score;
+                    }
+                    // Sort by timestamp (ascending) for ties
+                    return a.timestamp?.toMillis() - b.timestamp?.toMillis();
+                });
+
+                updateRankingList(allScores);
+            });
+        };
+
+        window.submitScore = async () => {
+            const nameInput = document.getElementById('playerName');
+            const scoreInput = document.getElementById('playerScore');
+            const name = nameInput.value.trim();
+            const score = parseInt(scoreInput.value, 10);
+
+            // Validate that the score is a number between 0 and 24
+            if (name === "" || isNaN(score) || score < 0 || score > 24) {
+                showModal('名前と0から24までの点数を入力してください。');
+                return;
+            }
+
+            try {
+                await addDoc(scoresCollectionRef, {
+                    name: name,
+                    score: score,
+                    timestamp: serverTimestamp()
+                });
+                nameInput.value = '';
+                scoreInput.value = '';
+                showModal('点数が送信されました！');
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                showModal('点数の送信中にエラーが発生しました。');
+            }
+        };
+
+        window.clearScores = async () => {
+             try {
+                const q = query(scoresCollectionRef);
+                const querySnapshot = await getDocs(q);
+                const batch = writeBatch(db); // use writeBatch
+                querySnapshot.forEach((doc) => {
+                    batch.delete(doc.ref);
+                });
+                await batch.commit();
+                showModal('ランキングをクリアしました。');
+            } catch (e) {
+                console.error("Error clearing scores: ", e);
+                showModal('ランキングのクリア中にエラーが発生しました。');
+            }
+        };
+
+        const updateRankingList = (scores) => {
+            const rankingList = document.getElementById('rankingList');
+            rankingList.innerHTML = ''; // Clear existing list
+
+            // --- 同率順位のロジックを実装 ---
+            let lastScore = null;
+            let currentRank = 1;
+
+            scores.forEach((item, index) => {
+                // 前の点数と異なる場合、順位を更新する
+                if (lastScore !== null && item.score < lastScore) {
+                    currentRank = index + 1;
+                }
+                lastScore = item.score;
+            // --- ------------------------ ---
+
+                let rankClass = '';
+                let rankText = currentRank;
+
+                if (currentRank === 1) {
+                    rankClass = 'gold text-black';
+                    rankText = '🥇';
+                } else if (currentRank === 2) {
+                    rankClass = 'silver text-black';
+                    rankText = '🥈';
+                } else if (currentRank === 3) {
+                    rankClass = 'bronze text-black';
+                    rankText = '🥉';
+                }
+
+                const listItem = document.createElement('li');
+                listItem.className = `ranking-item p-4 mb-2 rounded-lg flex items-center shadow-lg ${rankClass}`;
+                listItem.innerHTML = `
+                    <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold text-lg">${rankText}</div>
+                    <div class="ml-4 flex-grow">
+                        <span class="text-lg font-semibold">${item.name}</span>
+                    </div>
+                    <span class="text-2xl font-extrabold">${item.score}</span>
+                `;
+                rankingList.appendChild(listItem);
+            });
+        };
+
+        // Modal functions
+        window.showModal = (message) => {
+            const modal = document.getElementById('myModal');
+            const modalMessage = document.getElementById('modalMessage');
+            modalMessage.textContent = message;
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 3000); // Hide after 3 seconds
+        };
+
+        window.closeModal = () => {
+            document.getElementById('myModal').classList.add('hidden');
+        };
+
+        // Initialize on window load
+        window.onload = window.firebaseInit;
+    </script>
+
+    <!-- Main Content -->
+    <div id="loading-message" class="text-xl mt-20">読み込み中...</div>
+
+    <div id="main-content" class="container hidden p-4">
+        <h1 class="text-4xl sm:text-5xl font-extrabold text-center mb-6 gradient-text">
+            射的ランキング
+        </h1>
+        <p class="text-center text-gray-400 mb-8">
+            名前と点数を入力して、リアルタイムで順位をチェックしよう！
+        </p>
+
+        <!-- Score Input Section -->
+        <div class="input-card rounded-xl p-6 mb-8 shadow-2xl">
+            <h2 class="text-2xl font-bold mb-4 text-center text-gray-200">点数を入力</h2>
+            <div class="flex flex-col sm:flex-row gap-4">
+                <input type="text" id="playerName" placeholder="プレイヤー名" class="flex-1 p-3 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:border-purple-500">
+                <input type="number" id="playerScore" placeholder="点数" class="flex-1 p-3 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:border-purple-500">
+                <button onclick="submitScore()" class="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-bold rounded-lg shadow-lg hover:from-blue-600 hover:to-purple-700 transition duration-200 ease-in-out">
+                    送信
+                </button>
+            </div>
+            <div class="mt-4 text-center text-gray-500 text-sm">
+                あなたのユーザーID (ランキングは全員で共有されます): <span id="userIdDisplay" class="font-mono text-xs text-blue-400"></span>
+            </div>
+        </div>
+
+        <!-- Ranking Board Section -->
+        <div class="card rounded-xl p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-200">現在のランキング</h2>
+                <button onclick="clearScores()" class="text-sm text-gray-400 hover:text-red-500 transition duration-200">
+                    ランキングをクリア
+                </button>
+            </div>
+            <ul id="rankingList" class="space-y-2">
+                <!-- Ranking items will be inserted here by JavaScript -->
+            </ul>
+        </div>
+    </div>
+
+    <!-- Modal for notifications -->
+    <div id="myModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl text-center">
+            <p id="modalMessage" class="text-white text-lg font-semibold"></p>
+        </div>
+    </div>
+</body>
+</html>
