@@ -98,16 +98,14 @@
 
         let scoresCollectionRef;
         const setupListeners = () => {
-            const privatePath = `/artifacts/my-shooting-game-f932d/users/${userId}/scores`;
-            scoresCollectionRef = collection(db, privatePath);
-            
-            // Check if public data is needed
-            const isMultiplayer = true; // This is now a multiplayer app
-            if (isMultiplayer) {
-                const publicPath = `/artifacts/my-shooting-game-f932d/public/data/scores`;
-                scoresCollectionRef = collection(db, publicPath);
-            }
+            // isMultiplayerがtrueの場合、共有フォルダのパスを直接使用
+            const isMultiplayer = true; 
+            const path = isMultiplayer
+                ? `/artifacts/${firebaseConfig.projectId}/public/data/scores`
+                : `/artifacts/${firebaseConfig.projectId}/users/${userId}/scores`;
 
+            scoresCollectionRef = collection(db, path);
+            
             const q = query(scoresCollectionRef);
 
             // Fetch initial data and then listen for real-time updates
